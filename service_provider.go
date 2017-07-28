@@ -362,7 +362,7 @@ func (sp *ServiceProvider) ValidateResponse(rawResponseBuf []byte, possibleReque
 		retErr.PrivateErr = fmt.Errorf("cannot unmarshal response: %s", err)
 		return nil, retErr
 	}
-	if resp.Destination != sp.AcsURL {
+	if resp.Destination != "" && resp.Destination != sp.AcsURL {
 		retErr.PrivateErr = fmt.Errorf("`Destination` does not match AcsURL (expected %q)", sp.AcsURL)
 		return nil, retErr
 	}
