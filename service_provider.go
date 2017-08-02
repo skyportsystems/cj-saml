@@ -347,10 +347,11 @@ func (sp *ServiceProvider) ParseResponse(req *http.Request, possibleRequestIDs [
 		return nil, retErr
 	}
 
-	return sp.ValidateResponse(rawResponseBuf, possibleRequestIDs, now)
+	return sp.ValidateResponse(rawResponseBuf, possibleRequestIDs, now, false)
 }
 
-func (sp *ServiceProvider) ValidateResponse(rawResponseBuf []byte, possibleRequestIDs []string, now time.Time) (*Assertion, error) {
+func (sp *ServiceProvider) ValidateResponse(rawResponseBuf []byte, possibleRequestIDs []string, now time.Time,
+	skipSignatureVerify bool) (*Assertion, error) {
 	retErr := &InvalidResponseError{
 		Now: now,
 	}
@@ -391,8 +392,8 @@ func (sp *ServiceProvider) ValidateResponse(rawResponseBuf []byte, possibleReque
 		return nil, retErr
 	}
 
-	var assertion *Assertion
-	if resp.EncryptedAssertion == nil {
+	assertion := resp.Assertion
+	if !skipSignatureVerify && resp.EncryptedAssertion == nil {
 		elementName := "Response"
 		elementNs := "urn:oasis:names:tc:SAML:2.0:protocol"
 		if resp.Assertion != nil && resp.Assertion.Signature != nil {
@@ -410,7 +411,6 @@ func (sp *ServiceProvider) ValidateResponse(rawResponseBuf []byte, possibleReque
 			retErr.PrivateErr = fmt.Errorf("failed to verify signature on %s: %s", elementName, err)
 			return nil, retErr
 		}
-		assertion = resp.Assertion
 	}
 
 	// decrypt the response
@@ -422,16 +422,18 @@ func (sp *ServiceProvider) ValidateResponse(rawResponseBuf []byte, possibleReque
 		}
 		retErr.Response = string(plaintextAssertion)
 
-		if err := xmlsec.Verify(sp.getIDPSigningCert(), plaintextAssertion,
-			xmlsec.SignatureOptions{
-				XMLID: []xmlsec.XMLIDOption{{
-					ElementName:      "Assertion",
-					ElementNamespace: "urn:oasis:names:tc:SAML:2.0:assertion",
-					AttributeName:    "ID",
-				}},
-			}); err != nil {
-			retErr.PrivateErr = fmt.Errorf("failed to verify signature on response: %s", err)
-			return nil, retErr
+		if !skipSignatureVerify {
+			if err := xmlsec.Verify(sp.getIDPSigningCert(), plaintextAssertion,
+				xmlsec.SignatureOptions{
+					XMLID: []xmlsec.XMLIDOption{{
+						ElementName:      "Assertion",
+						ElementNamespace: "urn:oasis:names:tc:SAML:2.0:assertion",
+						AttributeName:    "ID",
+					}},
+				}); err != nil {
+				retErr.PrivateErr = fmt.Errorf("failed to verify signature on response: %s", err)
+				return nil, retErr
+			}
 		}
 
 		assertion = &Assertion{}
